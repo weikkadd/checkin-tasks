@@ -1,6 +1,21 @@
-import { eq } from "drizzle-orm";
+import { eq, and, desc, gte, lte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { 
+  InsertUser, 
+  users,
+  CheckinTask,
+  checkinTasks,
+  InsertCheckinTask,
+  ExecutionLog,
+  executionLogs,
+  InsertExecutionLog,
+  SystemSetting,
+  systemSettings,
+  InsertSystemSetting,
+  NotificationHistory,
+  notificationHistory,
+  InsertNotificationHistory,
+} from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,4 +104,142 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+// ============ Checkin Tasks ============
+
+export async function createCheckinTask(task: InsertCheckinTask): Promise<CheckinTask | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const result = await db.insert(checkinTasks).values(task);
+  const id = result[0].insertId;
+  return getCheckinTaskById(id as number);
+}
+
+export async function getCheckinTaskById(id: number): Promise<CheckinTask | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const result = await db.select().from(checkinTasks).where(eq(checkinTasks.id, id)).limit(1);
+  return result.length > 0 ? result[0] : null;
+}
+
+export async function getCheckinTasksByUserId(userId: number): Promise<CheckinTask[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db.select().from(checkinTasks).where(eq(checkinTasks.userId, userId));
+}
+
+export async function updateCheckinTask(id: number, updates: Partial<InsertCheckinTask>): Promise<CheckinTask | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  await db.update(checkinTasks).set(updates).where(eq(checkinTasks.id, id));
+  return getCheckinTaskById(id);
+}
+
+export async function deleteCheckinTask(id: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+
+  await db.delete(checkinTasks).where(eq(checkinTasks.id, id));
+  return true;
+}
+
+// ============ Execution Logs ============
+
+export async function createExecutionLog(log: InsertExecutionLog): Promise<ExecutionLog | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const result = await db.insert(executionLogs).values(log);
+  const id = result[0].insertId;
+  return getExecutionLogById(id as number);
+}
+
+export async function getExecutionLogById(id: number): Promise<ExecutionLog | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const result = await db.select().from(executionLogs).where(eq(executionLogs.id, id)).limit(1);
+  return result.length > 0 ? result[0] : null;
+}
+
+export async function getExecutionLogsByTaskId(taskId: number, limit: number = 50): Promise<ExecutionLog[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db.select()
+    .from(executionLogs)
+    .where(eq(executionLogs.taskId, taskId))
+    .orderBy(desc(executionLogs.createdAt))
+    .limit(limit);
+}
+
+// ============ System Settings ============
+
+export async function getSystemSettingsByUserId(userId: number): Promise<SystemSetting | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const result = await db.select().from(systemSettings).where(eq(systemSettings.userId, userId)).limit(1);
+  return result.length > 0 ? result[0] : null;
+}
+
+export async function upsertSystemSettings(userId: number, settings: Partial<InsertSystemSetting>): Promise<SystemSetting | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const existing = await getSystemSettingsByUserId(userId);
+  
+  if (existing) {
+    await db.update(systemSettings).set(settings).where(eq(systemSettings.userId, userId));
+  } else {
+    await db.insert(systemSettings).values({ userId, ...settings } as InsertSystemSetting);
+  }
+
+  return getSystemSettingsByUserId(userId);
+}
+
+// ============ Notification History ============
+
+export async function createNotificationHistory(notification: InsertNotificationHistory): Promise<NotificationHistory | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const result = await db.insert(notificationHistory).values(notification);
+  const id = result[0].insertId;
+  return getNotificationHistoryById(id as number);
+}
+
+export async function getNotificationHistoryById(id: number): Promise<NotificationHistory | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const result = await db.select().from(notificationHistory).where(eq(notificationHistory.id, id)).limit(1);
+  return result.length > 0 ? result[0] : null;
+}
+
+export async function getNotificationHistoryByTaskId(taskId: number, limit: number = 100): Promise<NotificationHistory[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db.select()
+    .from(notificationHistory)
+    .where(eq(notificationHistory.taskId, taskId))
+    .orderBy(desc(notificationHistory.createdAt))
+    .limit(limit);
+}
+
+export async function getNotificationHistoryByUserId(userId: number, limit: number = 100): Promise<NotificationHistory[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db.select()
+    .from(notificationHistory)
+    .innerJoin(checkinTasks, eq(notificationHistory.taskId, checkinTasks.id))
+    .where(eq(checkinTasks.userId, userId))
+    .orderBy(desc(notificationHistory.createdAt))
+    .limit(limit)
+    .then(rows => rows.map(row => row.notification_history));
+}
