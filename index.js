@@ -55,9 +55,9 @@ const authGuard = async (req, res, next) => {
   }
 }
 
-// ====================== 核心加载顺序（绝对不能乱）======================
-// 1. 托管静态资源（适配你的dist打包目录）
-app.use(express.static(path.resolve(__dirname, '../dist')))
+// ====================== 核心加载顺序 + 【修复路径BUG】======================
+// 1. 托管静态资源（修复：dist 在根目录，删除错误的 ../ 层级）
+app.use(express.static(path.resolve(__dirname, './dist')))
 
 // 2. 单独拦截登录页
 app.use("/login.html", loginPageGuard)
@@ -91,9 +91,9 @@ app.get("/api/user/info", async (req, res) => {
 // 4. 原有业务接口路由（保留你所有旧接口，不冲突）
 app.use('/api', router)
 
-// ====================== 前端SPA兜底路由（修复页面空白）======================
+// ====================== 前端SPA兜底路由【修复路径BUG】======================
 app.get('*', (req, res) => {
-  res.sendFile(path.resolve(__dirname, '../dist/index.html'), (err) => {
+  res.sendFile(path.resolve(__dirname, './dist/index.html'), (err) => {
     if (err) {
       res.status(404).send('Page Not Found')
     }
