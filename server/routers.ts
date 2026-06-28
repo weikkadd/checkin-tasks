@@ -5,6 +5,7 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
 import * as scheduler from "./scheduler";
+import * as notifications from "./notifications";
 import { TRPCError } from "@trpc/server";
 
 // ============ Validation Schemas ============
@@ -147,6 +148,13 @@ const settingsRouter = router({
       const updated = await db.upsertSystemSettings(ctx.user.id, input);
       if (!updated) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "更新设置失败" });
       return updated;
+    }),
+
+  validateGotify: protectedProcedure
+    .input(z.object({ serverUrl: z.string().url(), token: z.string() }))
+    .mutation(async ({ input }) => {
+      const isValid = await notifications.validateGotifyConfig(input.serverUrl, input.token);
+      return { success: isValid };
     }),
 });
 
