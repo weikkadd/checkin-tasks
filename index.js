@@ -55,14 +55,17 @@ const authGuard = async (req, res, next) => {
   }
 }
 
-// ====================== 核心加载顺序 + 【修复路径BUG】======================
-// 1. 托管静态资源（修复：dist 在根目录，删除错误的 ../ 层级）
+// ====================== 【绝对正确的加载顺序 根治白屏】======================
+// 1. 托管静态资源
 app.use(express.static(path.resolve(__dirname, './dist')))
 
-// 2. 单独拦截登录页
+// 2. 【最重要】优先挂载所有业务API路由（防止接口被守卫拦截白屏）
+app.use('/api', router)
+
+// 3. 单独拦截登录页
 app.use("/login.html", loginPageGuard)
 
-// 3. 全局权限拦截
+// 4. 最后挂载全局权限拦截
 app.use(authGuard)
 
 // ====================== 登录配套接口 ======================
@@ -88,10 +91,7 @@ app.get("/api/user/info", async (req, res) => {
   }
 })
 
-// 4. 原有业务接口路由（保留你所有旧接口，不冲突）
-app.use('/api', router)
-
-// ====================== 前端SPA兜底路由【修复路径BUG】======================
+// ====================== 前端SPA兜底路由 ======================
 app.get('*', (req, res) => {
   res.sendFile(path.resolve(__dirname, './dist/index.html'), (err) => {
     if (err) {
@@ -101,6 +101,6 @@ app.get('*', (req, res) => {
 })
 
 // 启动服务
-app.listen(PORT, () => {
+app.listen(PORT, () =&gt; {
   console.log(`Server running on port ${PORT}`)
 })
