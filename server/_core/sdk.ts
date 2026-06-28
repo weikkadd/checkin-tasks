@@ -347,19 +347,6 @@ function buildCronUser(
     isCron: true,
   } as AuthenticatedUser;
 }
-
-export const sdk = new SDKServer();// server/_core/sdk.ts
-async authenticateRequest(req: Request): Promise<AuthenticatedUser> {
-+  if (process.env.BYPASS_AUTH === "true") {
-+    const now = new Date();
-+    const mockUser = {
-+      id: 1, openId: "mock_admin", name: "Administrator",
-+      email: "admin@example.com", loginMethod: "bypass",
-+      role: "admin" as const,
-+      createdAt: now, updatedAt: now, lastSignedIn: now,
-+    };
-+    try { await db.upsertUser({ ...mockUser, lastSignedIn: now }); } catch {}
-+    return mockUser;
 +  }
    // 1. Prefer the session cookie (regular OAuth login).
 
