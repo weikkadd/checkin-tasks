@@ -83,6 +83,12 @@ const createOAuthHttpClient = (): AxiosInstance =>
     timeout: AXIOS_TIMEOUT_MS,
   });
 
+// 本地账号密码配置（从环境变量读取，安全可控）
+const LOCAL_USER = {
+  username: ENV.ADMIN_USER || "admin",
+  password: ENV.ADMIN_PASS || "admin123",
+};
+
 class SDKServer {
   private readonly client: AxiosInstance;
   private readonly oauthService: OAuthService;
@@ -186,7 +192,6 @@ class SDKServer {
     cookieValue: string | undefined | null
   ): Promise<{ openId: string; appId: string; name: string } | null> {
     if (!cookieValue) {
-      console.warn("[Auth] Missing session cookie");
       return null;
     }
 
@@ -202,7 +207,6 @@ class SDKServer {
         !isNonEmptyString(appId) ||
         !isNonEmptyString(name)
       ) {
-        console.warn("[Auth] Session payload missing required fields");
         return null;
       }
 
@@ -212,7 +216,6 @@ class SDKServer {
         name,
       };
     } catch (error) {
-      console.warn("[Auth] Session verification failed", String(error));
       return null;
     }
   }
@@ -241,12 +244,15 @@ class SDKServer {
     } as GetUserInfoWithJwtResponse;
   }
 
+  // 本地账号密码校验
+  checkLocalAuth(username: string, password: string): boolean {
+    return username === LOCAL_USER.username && password === LOCAL_USER.password;
+  }
+
   async authenticateRequest(req: Request): Promise<AuthenticatedUser> {
-    // 1. Prefer the session cookie (regular OAuth login).
     const cookies = this.parseCookies(req.headers.cookie);
     let sessionToken = cookies.get(COOKIE_NAME);
 
-    // 2. Fallback to the Authorization header
     if (!sessionToken) {
       const authHeader = req.headers.authorization;
       if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
@@ -256,50 +262,40 @@ class SDKServer {
 
     const session = await this.verifySession(sessionToken);
 
-    if (!session) {
-      throw ForbiddenError("Invalid session cookie");
-    }
-
-    if (session.openId.startsWith(CRON_OPEN_ID_PREFIX)) {
-      const userInfo = await this.getUserInfoWithJwt(sessionToken ?? "");
-      const taskUid = userInfo.taskUid ?? null;
-      if (!taskUid) {
-        throw ForbiddenError("Cron session missing task_uid");
-      }
-      return buildCronUser(userInfo);
-    }
-
-    const sessionUserId = session.openId;
-    const signedInAt = new Date();
-    let user = await db.getUserByOpenId(sessionUserId);
-
-    if (!user) {
-      try {
+    // 已有有效会话，直接登录
+    if (session) {
+      if (session.openId.startsWith(CRON_OPEN_ID_PREFIX)) {
         const userInfo = await this.getUserInfoWithJwt(sessionToken ?? "");
+        const taskUid = userInfo.taskUid ?? null;
+        if (!taskUid) {
+          throw ForbiddenError("Cron session missing task_uid");
+        }
+        return buildCronUser(userInfo);
+      }
+
+      const sessionUserId = session.openId;
+      const signedInAt = new Date();
+      let user = await db.getUserByOpenId(sessionUserId);
+
+      if (!user) {
         await db.upsertUser({
-          openId: userInfo.openId,
-          name: userInfo.name || null,
-          email: userInfo.email ?? null,
-          loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
+          openId: session.openId,
+          name: session.name || "Admin",
+          email: null,
+          loginMethod: "local",
           lastSignedIn: signedInAt,
         });
-        user = await db.getUserByOpenId(userInfo.openId);
-      } catch (error) {
-        console.error("[Auth] Failed to sync user from OAuth:", error);
-        throw ForbiddenError("Failed to sync user info");
+        user = await db.getUserByOpenId(sessionUserId);
       }
+
+      if (!user) throw ForbiddenError("User not found");
+
+      await db.upsertUser({ openId: user.openId, lastSignedIn: signedInAt });
+      return user;
     }
 
-    if (!user) {
-      throw ForbiddenError("User not found");
-    }
-
-    await db.upsertUser({
-      openId: user.openId,
-      lastSignedIn: signedInAt,
-    });
-
-    return user;
+    // 无会话 = 拒绝（需要前台账号密码登录）
+    throw ForbiddenError("请先登录");
   }
 
 }
