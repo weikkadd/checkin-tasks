@@ -255,99 +255,86 @@ class SDKServer {
       loginMethod,
     } as GetUserInfoWithJwtResponse;
   }
-
-  async authenticateRequest(req: Request): Promise<AuthenticatedUser> {
-    // 1. Prefer the session cookie (regular OAuth login).
-    const cookies = this.parseCookies(req.headers.cookie);
-    let sessionToken = cookies.get(COOKIE_NAME);
-
-    // 2. Fallback to the Authorization header (Preview auto-login via
-    //    sessionStorage), used when the browser blocks iframe cookies such as
-    //    Safari ITP, private browsing, or iOS/Android WebView.
-    if (!sessionToken) {
-      const authHeader = req.headers.authorization;
-      if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
-        sessionToken = authHeader.slice(7);
-      }
-    }
-
-    const session = await this.verifySession(sessionToken);
-
-    if (!session) {
-      throw ForbiddenError("Invalid session cookie");
-    }
-
-    if (session.openId.startsWith(CRON_OPEN_ID_PREFIX)) {
-      const userInfo = await this.getUserInfoWithJwt(sessionToken ?? "");
-      const taskUid = userInfo.taskUid ?? null;
-      if (!taskUid) {
-        throw ForbiddenError("Cron session missing task_uid");
-      }
-      return buildCronUser(userInfo);
-    }
-
-    const sessionUserId = session.openId;
-    const signedInAt = new Date();
-    let user = await db.getUserByOpenId(sessionUserId);
-
-    // If user not in DB, sync from OAuth server automatically
-    if (!user) {
-      try {
-        const userInfo = await this.getUserInfoWithJwt(sessionToken ?? "");
-        await db.upsertUser({
-          openId: userInfo.openId,
-          name: userInfo.name || null,
-          email: userInfo.email ?? null,
-          loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
-          lastSignedIn: signedInAt,
-        });
-        user = await db.getUserByOpenId(userInfo.openId);
-      } catch (error) {
-        console.error("[Auth] Failed to sync user from OAuth:", error);
-        throw ForbiddenError("Failed to sync user info");
-      }
-    }
-
-    if (!user) {
-      throw ForbiddenError("User not found");
-    }
-
-    await db.upsertUser({
-      openId: user.openId,
-      lastSignedIn: signedInAt,
-    });
-
-    return user;
+async authenticateRequest(req: Request): Promise<AuthenticatedUser> {
+  // 免登录调试开关
+  if (process.env.BYPASS_AUTH === "true") {
+    const now = new Date();
+    const mockUser = {
+      id: 1,
+      openId: "mock_admin",
+      name: "Administrator",
+      email: "admin@example.com",
+      loginMethod: "bypass",
+      role: "admin" as const,
+      createdAt: now,
+      updatedAt: now,
+      lastSignedIn: now,
+    };
+    try {
+      await db.upsertUser({ ...mockUser, lastSignedIn: now });
+    } catch {}
+    return mockUser;
   }
+
+  // 1. Prefer the session cookie (regular OAuth login).
+  const cookies = this.parseCookies(req.headers.cookie);
+  let sessionToken = cookies.get(COOKIE_NAME);
+
+  // 2. Fallback to the Authorization header (Preview auto-login via
+  //    sessionStorage), used when the browser blocks iframe cookies such as
+  //    Safari ITP, private browsing, or iOS/Android WebView.
+  if (!sessionToken) {
+    const authHeader = req.headers.authorization;
+    if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
+      sessionToken = authHeader.slice(7);
+    }
+  }
+
+  const session = await this.verifySession(sessionToken);
+
+  if (!session) {
+    throw ForbiddenError("Invalid session cookie");
+  }
+
+  if (session.openId.startsWith(CRON_OPEN_ID_PREFIX)) {
+    const userInfo = await this.getUserInfoWithJwt(sessionToken ?? "");
+    const taskUid = userInfo.taskUid ?? null;
+    if (!taskUid) {
+      throw ForbiddenError("Cron session missing task_uid");
+    }
+    return buildCronUser(userInfo);
+  }
+
+  const sessionUserId = session.openId;
+  const signedInAt = new Date();
+  let user = await db.getUserByOpenId(sessionUserId);
+
+  // If user not in DB, sync from OAuth server automatically
+  if (!user) {
+    try {
+      const userInfo = await this.getUserInfoWithJwt(sessionToken ?? "");
+      await db.upsertUser({
+        openId: userInfo.openId,
+        name: userInfo.name || null,
+        email: userInfo.email ?? null,
+        loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
+        lastSignedIn: signedInAt,
+      });
+      user = await db.getUserByOpenId(userInfo.openId);
+    } catch (error) {
+      console.error("[Auth] Failed to sync user from OAuth:", error);
+      throw ForbiddenError("Failed to sync user info");
+    }
+  }
+
+  if (!user) {
+    throw ForbiddenError("User not found");
+  }
+
+  await db.upsertUser({
+    openId: user.openId,
+    lastSignedIn: signedInAt,
+  });
+
+  return user;
 }
-
-const CRON_OPEN_ID_PREFIX = "cron_";
-
-/** Result of `sdk.authenticateRequest`. Cron callbacks set `isCron=true` and `taskUid`; see `references/periodic-updates.md`. */
-export type AuthenticatedUser = User & {
-  taskUid?: string;
-  isCron?: boolean;
-};
-
-function buildCronUser(
-  userInfo: GetUserInfoWithJwtResponse
-): AuthenticatedUser {
-  const now = new Date();
-  return {
-    id: -1,
-    openId: userInfo.openId,
-    name: userInfo.name || "Manus Scheduled Task",
-    email: null,
-    loginMethod: null,
-    role: "user",
-    createdAt: now,
-    updatedAt: now,
-    lastSignedIn: now,
-    taskUid: userInfo.taskUid ?? undefined,
-    isCron: true,
-  } as AuthenticatedUser;
-}
-+  }
-   // 1. Prefer the session cookie (regular OAuth login).
-
-
