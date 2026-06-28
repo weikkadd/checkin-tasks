@@ -335,6 +335,6 @@ async authenticateRequest(req: Request): Promise<AuthenticatedUser> {
     openId: user.openId,
     lastSignedIn: signedInAt,
   });
-
   return user;
 }
+export const sdk = new SDKServer();
