@@ -1,0 +1,15 @@
+*** Begin Patch
+*** Update File: package.json
+@@
+-  "scripts": {
+-    "dev": "next dev",
+-    "build": "next build",
+-    "start": "next start"
+-  },
++  "scripts": {
++    "dev": "next dev",
++    "build": "next build && next export -o out",
++    "preview": "next start -p 3000",
++    "start": "npx serve out"
++  },
+*** End Patch
