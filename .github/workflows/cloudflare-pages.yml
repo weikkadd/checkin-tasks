@@ -1,9 +1,10 @@
 name: Deploy to Cloudflare Pages
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+  # ⏸️ 已暂停 (需要恢复时取消注释)
+  # push:
+  #   branches: [main]
 
 jobs:
   build:
