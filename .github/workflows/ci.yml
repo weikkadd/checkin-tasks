@@ -1,10 +1,12 @@
 name: CI - Build & Test
 
 on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main, develop]
+  workflow_dispatch:
+  # ⏸️ 已暂停 (需要恢复时取消注释)
+  # push:
+  #   branches: [main, develop]
+  # pull_request:
+  #   branches: [main, develop]
 
 jobs:
   build:
