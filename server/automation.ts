@@ -1,4 +1,5 @@
 import { chromium, Browser, Page, BrowserContext } from "playwright";
+import { findRenewalHandler } from "./scripts/registry";
 
 /**
  * 浏览器指纹伪装配置
@@ -157,6 +158,44 @@ export async function executeAutomationTask(
   let page: Page | null = null;
 
   try {
+    // 检查是否有注册的专用续期脚本
+    const handler = findRenewalHandler(config.url);
+
+    if (handler) {
+      console.log(`[Automation] 使用专用续期脚本: ${handler.name}`);
+
+      // 启动浏览器
+      browser = await chromium.launch({
+        headless: true,
+        args: [
+          "--disable-blink-features=AutomationControlled",
+          "--disable-web-resources",
+          "--no-first-run",
+          "--no-default-browser-check",
+          "--disable-popup-blocking",
+        ],
+      });
+
+      const result = await handler.execute(browser);
+      const duration = Date.now() - startTime;
+
+      if (result.success) {
+        return {
+          success: true,
+          message: result.message,
+          duration,
+        };
+      }
+
+      return {
+        success: false,
+        message: result.message,
+        duration,
+        errorDetails: result.details || result.message,
+      };
+    }
+
+    // 没有专用脚本，走通用登录流程
     // 启动浏览器
     browser = await chromium.launch({
       headless: true,
